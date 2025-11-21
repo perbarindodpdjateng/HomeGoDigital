@@ -2,24 +2,136 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
-  <title>Rekap Peserta Marquee</title>
+  <title>Rekap Peserta</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="styles.css">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:transparent;color:#222;line-height:1.0}
+    .card-header{position:sticky;top:0;z-index:1000;background:#fff;border-radius:0 0 8px 8px;box-shadow:0 4px 12px rgba(0,102,255,.25), inset 0 -2px 4px rgba(0,0,0,.1);padding:8px 12px;margin-bottom:4px}
+    table.header-table{width:100%;border-collapse:collapse}
+    table.header-table th{background:transparent;color:#0066ff;font-size:11px;font-weight:600;text-align:left;padding:4px 6px}
+    #controls{position:sticky;top:30px;z-index:999;display:flex;align-items:center;gap:8px;padding:7px 10px;font-size:11px;background:linear-gradient(135deg,#4f8cff 0%,#0066ff 100%);color:#fff;box-shadow:0 2px 8px rgba(0,102,255,.3)}
+    #controls input[type=text]{flex:1;max-width:240px;font-size:11px;padding:5px 8px;border:none;border-radius:4px;box-shadow:inset 0 1px 3px rgba(0,0,0,.15)}
+    #rowCount{margin-left:auto;font-size:10px;opacity:.9}
+    .table-wrapper{overflow-x:auto;margin:0 4px 8px 4px;border-radius:6px;box-shadow:0 2px 6px rgba(0,0,0,.28)}
+    table.data-table{width:100%;border-collapse:collapse;background:#fff;border-radius:6px;overflow:hidden}
+    table.data-table td{font-size:10px;padding:2px 6px;border-bottom:1px solid #eef2f7}
+    table.data-table tr:nth-child(even) td{background:#fafbfc}
+    #loading{text-align:center;padding:20px;font-size:10px;color:#0066ff}
+    #pagination{display:flex;justify-content:center;align-items:center;gap:12px;padding:6px;font-size:10px}
+    #pagination button{padding:4px 10px;border:none;border-radius:4px;background:#0066ff;color:#fff;font-size:10px;cursor:pointer}
+    #pagination button:disabled{background:#8cb5ff;cursor:not-allowed}
+    @keyframes slideUp{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-20px)}}
+    tr.fade-out{animation:slideUp .5s ease forwards}
+  </style>
 </head>
 <body>
+  <div class="card-header"><table class="header-table" id="headerTable"></table></div>
   <div id="controls">
     <input id="searchInput" placeholder="Cari..." autocomplete="off">
-    <button onclick="exportCSV()">CSV</button>
-    <button onclick="exportXLS()">XLS</button>
-    <button onclick="toggleMarquee()" id="marqueeBtn">⏸</button>
     <span id="rowCount">(0)</span>
   </div>
-
   <div id="loading">🔄 Memuat data...</div>
-  <div class="table-wrapper">
-    <table id="dataTable"></table>
+  <div class="table-wrapper"><table class="data-table" id="dataTable"></table></div>
+  <div id="pagination">
+    <button id="prevBtn" onclick="changePage(-1)">« Sebelum</button>
+    <span id="pageInfo"></span>
+    <button id="nextBtn" onclick="changePage(1)">Berikut »</button>
   </div>
 
-  <script src="script.js" defer></script>
+  <script>
+    const ROWS_PER_PAGE=5;
+    let previousData='',originalData=[],filteredData=[],page=1;
+    const $=id=>document.getElementById(id);
+
+    async function fetchData(){
+      try{
+        const res=await fetch('https://script.google.com/macros/s/AKfycbxUszW9ZIJp-T4NZNftrkfpxcV2WKTaL3hZ8tU7pE7oJl2hbtNLU_xqLYIn9Y3oAAHuOw/exec',{cache:'no-store'});
+        const data=await res.json();
+        const dataStr=JSON.stringify(data);
+        if(dataStr!==previousData){
+          previousData=dataStr;
+          originalData=data;
+          filteredData=data;
+          renderHeader(data[0]);
+          renderTable();
+          $('loading').style.display='none';
+        }
+      }catch(e){
+        $('loading').textContent="⚠️ Gagal memuat data.";
+      }
+    }
+    function renderHeader(headerRow){
+      const hTable=$('headerTable');
+      hTable.innerHTML='';
+      const tr=document.createElement('tr');
+      headerRow.forEach(cell=>{const th=document.createElement('th');th.textContent=cell;tr.appendChild(th);});
+      hTable.appendChild(tr);
+    }
+    function renderTable(){
+      const table=$('dataTable');
+      table.innerHTML='';
+      const start=(page-1)*ROWS_PER_PAGE+1;
+      const end=start+ROWS_PER_PAGE;
+      const pageRows=filteredData.slice(start,end);
+      const fragment=document.createDocumentFragment();
+      pageRows.forEach(row=>{
+        const tr=document.createElement('tr');
+        row.forEach((cell,j)=>{
+          const td=document.createElement('td');
+          if(j===4&&typeof cell==="string"&&cell.includes("google.com/maps")){
+            td.textContent="🏦";
+          }else if(typeof cell==="string"&&cell.startsWith("http")){
+            td.innerHTML=`<a href="${cell}" target="_blank">🌐</a>`;
+          }else{
+            td.textContent=cell;
+          }
+          tr.appendChild(td);
+        });
+        fragment.appendChild(tr);
+      });
+      table.appendChild(fragment);
+      $('rowCount').textContent=`${filteredData.length-1}`;
+      updatePagination();
+    }
+    function updatePagination(){
+      const total=Math.max(1,Math.ceil((filteredData.length-1)/ROWS_PER_PAGE));
+      $('pageInfo').textContent=`Hal ${page} / ${total}`;
+      $('prevBtn').disabled=page===1;
+      $('nextBtn').disabled=page===total;
+    }
+    function changePage(dir){
+      const total=Math.max(1,Math.ceil((filteredData.length-1)/ROWS_PER_PAGE));
+      page=Math.max(1,Math.min(total,page+dir));
+      renderTable();
+    }
+    function rollingMarquee(){
+      const table=$('dataTable');
+      const firstRow=table.rows[0];
+      if(!firstRow)return;
+      firstRow.classList.add("fade-out");
+      setTimeout(()=>{
+        table.deleteRow(0);
+        table.appendChild(firstRow);
+        firstRow.classList.remove("fade-out");
+      },500);
+    }
+    function debounce(fn,delay){
+      let t;
+      return function(...args){
+        clearTimeout(t);
+        t=setTimeout(()=>fn.apply(this,args),delay);
+      };
+    }
+    $('searchInput').addEventListener("input",debounce(function(){
+      const kw=this.value.toLowerCase();
+      filteredData=[originalData[0],...originalData.slice(1).filter(r=>r.some(c=>String(c).toLowerCase().includes(kw)))];
+      page=1;
+      renderTable();
+    },300));
+    fetchData();
+    setInterval(fetchData,15000);
+    setInterval(rollingMarquee,7000);
+  </script>
 </body>
 </html>
